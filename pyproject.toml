@@ -1,0 +1,29 @@
+[project]
+name = "git2llm"
+version = "0.1.0"
+description = "GitHub to LLM Fine-Tuning Dataset Generator"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "click>=8.4.1",
+    "datasketch>=1.10.0",
+    "inquirerpy>=0.3.4",
+    "jinja2>=3.1.6",
+    "pydantic>=2.13.4",
+    "pydriller>=2.9",
+    "pygithub>=2.9.1",
+    "pyyaml>=6.0.3",
+    "requests>=2.34.2",
+    "rich>=15.0.0",
+    "tenacity>=9.1.4",
+]
+
+[project.scripts]
+git2llm = "git2llm.cli:cli"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+]
+

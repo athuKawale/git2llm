@@ -1,0 +1,32 @@
+filter:
+  exclude_merge_commits: true
+  exclude_bot_authors: true
+  exclude_binary_only: true
+  exclude_revert_commits: true
+  
+  min_commit_message_words: 5
+  max_commit_message_chars: 500
+  min_diff_lines: 3
+  max_diff_lines: 500
+  max_files_changed: 20
+  min_files_changed: 1
+  
+  min_content_score: 0.5
+  require_verb_start: true
+  exclude_wip_messages: true
+  
+  dedup_method: "minhash"
+  dedup_threshold: 0.85
+  
+  min_pr_body_words: 20
+  require_linked_issue: false
+
+collection:
+  max_commits_per_repo: 5000
+  max_prs_per_repo: 1000
+  since: null
+  branches: ["main", "master", "develop"]
+
+max_workers: 4
+output_format: "alpaca"
+task: "all"
