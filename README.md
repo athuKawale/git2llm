@@ -1,7 +1,7 @@
 # git2llm — GitHub to LLM Fine-Tuning Dataset Generator
 
 [![Python Version](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Build Status](https://img.shields.io/badge/tests-passed-green.svg)](#testing)
 
 `git2llm` is a plug-and-play CLI tool and Python library that authenticates with GitHub, discovers repositories, mines commits, pull requests, issues, and tags in parallel, applies aggressive multi-stage quality filters, and generates clean JSONL datasets in Alpaca or ShareGPT format ready to drop into Unsloth, LLaMA-Factory, or Axolotl.
@@ -217,4 +217,4 @@ uv run pytest
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) or details in project metadata.
+This project is licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE) for details.

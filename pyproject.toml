@@ -3,6 +3,7 @@ name = "git2llm"
 version = "0.1.0"
 description = "GitHub to LLM Fine-Tuning Dataset Generator"
 readme = "README.md"
+license = {text = "Apache-2.0"}
 requires-python = ">=3.13"
 dependencies = [
     "click>=8.4.1",
