@@ -19,7 +19,13 @@ def clone_repo(repo_name: str, token: str = None) -> str:
     local_path = os.path.join(cache_dir, safe_repo_name)
     
     if os.path.exists(os.path.join(local_path, ".git")):
-        logger.info(f"Repo {repo_name} already cloned at {local_path}. Using existing cache.")
+        logger.info(f"Repo {repo_name} already cloned at {local_path}. Fetching latest remote branches...")
+        try:
+            # Configure to track all remote branches and fetch
+            subprocess.run(["git", "remote", "set-branches", "origin", "*"], cwd=local_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["git", "fetch", "--depth=500"], cwd=local_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            logger.debug(f"Failed to fetch updates for {repo_name}: {e}")
         return local_path
 
     logger.info(f"Cloning {repo_name}...")
@@ -32,6 +38,7 @@ def clone_repo(repo_name: str, token: str = None) -> str:
         "git", "clone", 
         "--depth=500", 
         "--filter=blob:none", 
+        "--no-single-branch",
         clone_url, 
         local_path
     ]
@@ -45,7 +52,7 @@ def clone_repo(repo_name: str, token: str = None) -> str:
         # Try cloning without token / public fallback if not already tried
         if token:
             logger.info("Retrying public clone...")
-            cmd_public = ["git", "clone", "--depth=500", "--filter=blob:none", f"https://github.com/{repo_name}.git", local_path]
+            cmd_public = ["git", "clone", "--depth=500", "--filter=blob:none", "--no-single-branch", f"https://github.com/{repo_name}.git", local_path]
             try:
                 subprocess.run(cmd_public, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 logger.info(f"Successfully cloned public {repo_name} to {local_path}")

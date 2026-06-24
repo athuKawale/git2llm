@@ -13,3 +13,5 @@ wheels/
 .git2llm_cache/
 git2llm_output/
 
+
+.agents/

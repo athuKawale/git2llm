@@ -1,4 +1,5 @@
 import os
+import subprocess
 from datetime import datetime
 from typing import List, Optional
 from pydriller import Repository, ModificationType
@@ -45,67 +46,95 @@ class CommitCollector(BaseCollector):
 
         logger.info(f"Mining commits from local path {local_path}...")
         
-        # Build pydriller Repository kwargs
-        kwargs = {}
+        base_kwargs = {}
         if self.config.collection.since:
-            # Pydriller since takes a datetime
-            kwargs["since"] = datetime.combine(self.config.collection.since, datetime.min.time())
-        if self.config.collection.branches:
-            kwargs["only_branches"] = self.config.collection.branches
+            base_kwargs["since"] = datetime.combine(self.config.collection.since, datetime.min.time())
 
+        branches = self.config.collection.branches or []
         records = []
+        seen_shas = set()
         max_commits = self.config.collection.max_commits_per_repo
-        
-        try:
-            repo_miner = Repository(local_path, order='reverse', **kwargs)
-            for commit in repo_miner.traverse_commits():
-                if len(records) >= max_commits:
-                    logger.info(f"Reached commit limit of {max_commits} for {self.repo_name}")
-                    break
-                
-                # Split message into subject and body
-                msg_parts = commit.msg.split("\n", 1)
-                subject = msg_parts[0]
-                body = msg_parts[1] if len(msg_parts) > 1 else ""
 
-                files_changed = []
-                for mod in commit.modified_files:
-                    # Determine change type
-                    change_type = "MODIFY"
-                    if mod.change_type == ModificationType.ADD:
-                        change_type = "ADD"
-                    elif mod.change_type == ModificationType.DELETE:
-                        change_type = "DELETE"
-                    elif mod.change_type == ModificationType.RENAME:
-                        change_type = "RENAME"
+        def process_commit(commit):
+            if commit.hash in seen_shas:
+                return
+            seen_shas.add(commit.hash)
+            
+            # Split message into subject and body
+            msg_parts = commit.msg.split("\n", 1)
+            subject = msg_parts[0]
+            body = msg_parts[1] if len(msg_parts) > 1 else ""
 
-                    filename = mod.new_path or mod.old_path or ""
-                    
-                    diff_content = mod.diff or ""
-                    files_changed.append(FileChange(
-                        filename=filename,
-                        change_type=change_type,
-                        diff=diff_content,
-                        additions=mod.added,
-                        deletions=mod.deleted,
-                        language=self._detect_language(filename)
-                    ))
+            files_changed = []
+            for mod in commit.modified_files:
+                change_type = "MODIFY"
+                if mod.change_type == ModificationType.ADD:
+                    change_type = "ADD"
+                elif mod.change_type == ModificationType.DELETE:
+                    change_type = "DELETE"
+                elif mod.change_type == ModificationType.RENAME:
+                    change_type = "RENAME"
 
-                records.append(CommitRecord(
-                    sha=commit.hash,
-                    repo=self.repo_name,
-                    message_subject=subject,
-                    message_body=body,
-                    author=commit.author.name or "",
-                    author_email=commit.author.email or "",
-                    timestamp=commit.author_date,
-                    files_changed=files_changed,
-                    total_additions=commit.insertions,
-                    total_deletions=commit.deletions,
-                    is_merge=commit.merge,
-                    parent_shas=commit.parents
+                filename = mod.new_path or mod.old_path or ""
+                diff_content = mod.diff or ""
+                files_changed.append(FileChange(
+                    filename=filename,
+                    change_type=change_type,
+                    diff=diff_content,
+                    additions=mod.added_lines,
+                    deletions=mod.deleted_lines,
+                    language=self._detect_language(filename)
                 ))
-                
+
+            records.append(CommitRecord(
+                sha=commit.hash,
+                repo=self.repo_name,
+                message_subject=subject,
+                message_body=body,
+                author=commit.author.name or "",
+                author_email=commit.author.email or "",
+                timestamp=commit.author_date,
+                files_changed=files_changed,
+                total_additions=commit.insertions,
+                total_deletions=commit.deletions,
+                is_merge=commit.merge,
+                parent_shas=commit.parents
+            ))
+
+        try:
+            if not branches:
+                # Traverse all branches using include_remotes=True
+                kwargs = {**base_kwargs, "include_remotes": True, "order": "reverse"}
+                repo_miner = Repository(local_path, **kwargs)
+                for commit in repo_miner.traverse_commits():
+                    if len(records) >= max_commits:
+                        logger.info(f"Reached commit limit of {max_commits} for {self.repo_name}")
+                        break
+                    process_commit(commit)
+            else:
+                # Traverse specific branches
+                for branch in branches:
+                    if len(records) >= max_commits:
+                        break
+                    
+                    # Create local tracking branch if it exists as remote
+                    subprocess.run(
+                        ["git", "checkout", "-B", branch, f"origin/{branch}"],
+                        cwd=local_path,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
+                    
+                    kwargs = {**base_kwargs, "only_in_branch": branch, "order": "reverse"}
+                    try:
+                        repo_miner = Repository(local_path, **kwargs)
+                        for commit in repo_miner.traverse_commits():
+                            if len(records) >= max_commits:
+                                logger.info(f"Reached commit limit of {max_commits} for {self.repo_name}")
+                                break
+                            process_commit(commit)
+                    except Exception as branch_err:
+                        logger.warning(f"Branch {branch} not found or error mining in {self.repo_name}: {branch_err}")
         except Exception as e:
             logger.error(f"Error traversing commits for {self.repo_name}: {e}")
             

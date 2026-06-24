@@ -26,3 +26,23 @@ def select_repos(repos: List[RepoMeta]) -> List[str]:
     ).execute()
     
     return result
+
+def select_branches(branch_names: List[str]) -> List[str]:
+    """Present interactive multi-select UI to pick branches."""
+    if not branch_names:
+        return []
+        
+    choices = [Choice(value="ALL", name="All branches (mine everything)")]
+    for b in sorted(branch_names):
+        choices.append(Choice(value=b, name=b))
+        
+    result = inquirer.checkbox(
+        message="Select branches to mine (space=select, enter=confirm):",
+        choices=choices,
+        vi_mode=False
+    ).execute()
+    
+    if "ALL" in result or not result:
+        return []
+    return result
+

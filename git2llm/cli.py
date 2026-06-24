@@ -3,7 +3,7 @@ from datetime import date
 import click
 from git2llm.auth import PATAuth
 from git2llm.auth.token_store import save_token, clear_token
-from git2llm.discovery import list_accessible_repos, select_repos
+from git2llm.discovery import list_accessible_repos, select_repos, select_branches
 from git2llm.config import AppConfig, FilterConfig, CollectionConfig
 from git2llm.writer import DatasetWriter
 from git2llm.orchestrator import run_pipeline
@@ -50,13 +50,15 @@ def repos():
 @click.option("--task", "-t", default="commit_message", type=click.Choice(["commit_message", "pr_review", "issue_to_patch", "all"]), help="Task type to generate")
 @click.option("--output", "-o", default="./git2llm_output/", help="Output directory")
 @click.option("--config", "config_file", help="Path to config YAML file")
+@click.option("--profile", "-p", default="default", type=click.Choice(["default", "strict", "permissive"]), help="Built-in config profile to use")
 @click.option("--workers", "-w", default=4, type=int, help="Parallel worker threads")
 @click.option("--since", help="Earliest date to collect from (YYYY-MM-DD)")
 @click.option("--languages", "-l", multiple=True, help="Filter files by programming language")
 @click.option("--min-stars", default=0, type=int, help="Skip repositories below star count")
 @click.option("--no-private", is_flag=True, help="Skip private repositories")
 @click.option("--dry-run", is_flag=True, help="Run filtering without writing JSONL")
-def run(repos, output_format, task, output, config_file, workers, since, languages, min_stars, no_private, dry_run):
+@click.option("--branch", "-b", multiple=True, help="Specific git branches to mine (default: all)")
+def run(repos, output_format, task, output, config_file, profile, workers, since, languages, min_stars, no_private, dry_run, branch):
     """Run the mining, filtering and generation pipeline."""
     # 1. Load config
     if config_file:
@@ -67,7 +69,12 @@ def run(repos, output_format, task, output, config_file, workers, since, languag
             click.echo(click.style(f"Error loading config file: {e}", fg="red"))
             return
     else:
-        app_config = AppConfig()
+        try:
+            app_config = AppConfig.load_from_profile(profile)
+            logger.info(f"Using built-in config profile: '{profile}'")
+        except Exception as e:
+            click.echo(click.style(f"Error loading config profile: {e}", fg="red"))
+            return
 
     # 2. Authenticate
     auth_provider = PATAuth()
@@ -116,6 +123,26 @@ def run(repos, output_format, task, output, config_file, workers, since, languag
             click.echo(click.style("Invalid since date format. Use YYYY-MM-DD.", fg="red"))
             return
 
+    if not branch:
+        try:
+            logger.info("Fetching branches for selected repositories...")
+            all_branches = set()
+            for repo_name in selected_repos:
+                repo_obj = g.get_repo(repo_name)
+                for b in repo_obj.get_branches():
+                    all_branches.add(b.name)
+            
+            if all_branches:
+                selected_branches = select_branches(list(all_branches))
+                app_config.collection.branches = selected_branches
+            else:
+                app_config.collection.branches = []
+        except Exception as e:
+            logger.warning(f"Failed to fetch branches from GitHub API: {e}. Defaulting to all branches.")
+            app_config.collection.branches = []
+    else:
+        app_config.collection.branches = list(branch)
+
     # 5. Initialize Writer
     writer = DatasetWriter(output)
 
@@ -145,6 +172,18 @@ def run(repos, output_format, task, output, config_file, workers, since, languag
     except Exception as e:
         click.echo(click.style(f"Pipeline failed: {e}", fg="red"))
         raise e
+
+@cli.command("init-config")
+@click.argument("profile", type=click.Choice(["default", "strict", "permissive"]), default="default")
+@click.option("--output", "-o", default="config.yaml", help="Path to write the config file")
+def init_config(profile, output):
+    """Generate a starter config YAML file from a built-in profile."""
+    try:
+        app_config = AppConfig.load_from_profile(profile)
+        app_config.dump_to_yaml(output)
+        click.echo(click.style(f"Successfully wrote '{profile}' config profile to: {output}", fg="green"))
+    except Exception as e:
+        click.echo(click.style(f"Failed to generate config file: {e}", fg="red"))
 
 if __name__ == "__main__":
     cli()
