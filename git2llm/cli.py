@@ -8,6 +8,7 @@ from git2llm.config import AppConfig, FilterConfig, CollectionConfig
 from git2llm.writer import DatasetWriter
 from git2llm.orchestrator import run_pipeline
 from git2llm.utils.logging import setup_logging, logger
+from git2llm.utils.split import split_jsonl_file
 
 @click.group()
 @click.option("--debug", is_flag=True, help="Enable debug logging")
@@ -184,6 +185,32 @@ def init_config(profile, output):
         click.echo(click.style(f"Successfully wrote '{profile}' config profile to: {output}", fg="green"))
     except Exception as e:
         click.echo(click.style(f"Failed to generate config file: {e}", fg="red"))
+
+@cli.command("split")
+@click.argument("dataset_path", type=click.Path(exists=True, file_okay=True, dir_okay=False))
+@click.option("--eval-ratio", "-r", default=0.1, type=click.FloatRange(0.0, 1.0), help="Ratio of evaluation dataset (default: 0.1)")
+@click.option("--seed", "-s", default=42, type=int, help="Random seed for shuffling (default: 42)")
+@click.option("--output-dir", "-o", help="Output directory (default: same as input dataset directory)")
+@click.option("--train-name", default="train.jsonl", help="Training set file name (default: train.jsonl)")
+@click.option("--eval-name", default="eval.jsonl", help="Evaluation set file name (default: eval.jsonl)")
+@click.option("--shuffle/--no-shuffle", default=True, help="Shuffle the dataset before splitting")
+def split(dataset_path, eval_ratio, seed, output_dir, train_name, eval_name, shuffle):
+    """Split a generated JSONL dataset into training and evaluation sets."""
+    try:
+        train_path, eval_path, train_count, eval_count = split_jsonl_file(
+            input_path=dataset_path,
+            eval_ratio=eval_ratio,
+            seed=seed,
+            shuffle=shuffle,
+            output_dir=output_dir,
+            train_name=train_name,
+            eval_name=eval_name
+        )
+        click.echo(click.style("Dataset Split Completed Successfully!", fg="green", bold=True))
+        click.echo(f"Train File:  {os.path.abspath(train_path)} ({train_count} records)")
+        click.echo(f"Eval File:   {os.path.abspath(eval_path)} ({eval_count} records)")
+    except Exception as e:
+        click.echo(click.style(f"Split failed: {e}", fg="red"))
 
 if __name__ == "__main__":
     cli()

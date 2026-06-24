@@ -191,6 +191,24 @@ uv run git2llm init-config permissive -o configs/my_custom_config.yaml
 
 You can then customize `configs/my_custom_config.yaml` and run the pipeline using the `--config` option pointing to it.
 
+#### 4. Split Dataset
+
+After generating a dataset (e.g. `git2llm_output/dataset.jsonl`), you can split it into training (`train.jsonl`) and evaluation (`eval.jsonl`) files:
+
+```bash
+# Split with default 10% evaluation set and shuffle enabled
+uv run git2llm split git2llm_output/dataset.jsonl
+
+# Split with a specific 20% eval ratio and random seed
+uv run git2llm split git2llm_output/dataset.jsonl --eval-ratio 0.2 --seed 1234
+```
+
+Options:
+* `-r, --eval-ratio FLOAT`: Proportion of dataset to assign to evaluation (default: `0.1`).
+* `-s, --seed INTEGER`: Random seed for shuffling reproducibility (default: `42`).
+* `-o, --output-dir PATH`: Target output directory (defaults to same folder as input file).
+* `--shuffle / --no-shuffle`: Toggle shuffling of records before splitting (default: `True`).
+
 ---
 
 ## Development Workflow
