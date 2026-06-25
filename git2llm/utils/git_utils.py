@@ -9,7 +9,7 @@ def get_cache_dir() -> str:
     os.makedirs(cache_dir, exist_ok=True)
     return cache_dir
 
-def clone_repo(repo_name: str, token: str = None) -> str:
+def clone_repo(repo_name: str, token: str = None, depth: int = 500) -> str:
     """
     Shallow clone a GitHub repo into cache directory.
     Returns path to local clone.
@@ -23,7 +23,7 @@ def clone_repo(repo_name: str, token: str = None) -> str:
         try:
             # Configure to track all remote branches and fetch
             subprocess.run(["git", "remote", "set-branches", "origin", "*"], cwd=local_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            subprocess.run(["git", "fetch", "--depth=500"], cwd=local_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["git", "fetch", f"--depth={depth}"], cwd=local_path, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception as e:
             logger.debug(f"Failed to fetch updates for {repo_name}: {e}")
         return local_path
@@ -36,7 +36,7 @@ def clone_repo(repo_name: str, token: str = None) -> str:
         
     cmd = [
         "git", "clone", 
-        "--depth=500", 
+        f"--depth={depth}", 
         "--filter=blob:none", 
         "--no-single-branch",
         clone_url, 
@@ -52,7 +52,7 @@ def clone_repo(repo_name: str, token: str = None) -> str:
         # Try cloning without token / public fallback if not already tried
         if token:
             logger.info("Retrying public clone...")
-            cmd_public = ["git", "clone", "--depth=500", "--filter=blob:none", "--no-single-branch", f"https://github.com/{repo_name}.git", local_path]
+            cmd_public = ["git", "clone", f"--depth={depth}", "--filter=blob:none", "--no-single-branch", f"https://github.com/{repo_name}.git", local_path]
             try:
                 subprocess.run(cmd_public, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 logger.info(f"Successfully cloned public {repo_name} to {local_path}")

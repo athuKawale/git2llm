@@ -93,21 +93,22 @@ def test_cli_interactive_with_task_specified(
 
 @patch("git2llm.cli.run_pipeline")
 @patch("git2llm.cli.select_task")
-def test_cli_non_interactive_no_task_defaults(
+def test_cli_non_interactive_no_task_prompts(
     mock_select_task,
     mock_run_pipeline,
     mock_github
 ):
     mock_client, mock_auth = mock_github
+    mock_select_task.return_value = "pr_review"
     runner = CliRunner()
     
-    # 3. Test running non-interactively (repos specified via CLI), task not specified -> defaults to commit_message
+    # 3. Test running non-interactively (repos specified via CLI), task not specified -> prompts for task
     result = runner.invoke(cli, ["run", "-r", "owner/repo"])
     assert result.exit_code == 0
-    mock_select_task.assert_not_called()
+    mock_select_task.assert_called_once()
     mock_run_pipeline.assert_called_once()
     config_passed = mock_run_pipeline.call_args[1]["config"]
-    assert config_passed.task == "commit_message"
+    assert config_passed.task == "pr_review"
 
 @patch("git2llm.cli.run_pipeline")
 @patch("git2llm.cli.select_task")
@@ -155,4 +156,35 @@ def test_cli_non_interactive_with_config_file_no_task(
     mock_run_pipeline.assert_called_once()
     config_passed = mock_run_pipeline.call_args[1]["config"]
     assert config_passed.task == "issue_to_patch"
+
+@patch("git2llm.cli.run_pipeline")
+@patch("git2llm.cli.select_branches")
+@patch("git2llm.cli.select_task")
+def test_cli_limit_and_branch_prompt(
+    mock_select_task,
+    mock_select_branches,
+    mock_run_pipeline,
+    mock_github
+):
+    mock_client, mock_auth = mock_github
+    mock_select_task.return_value = "commit_message"
+    
+    # Mock some branches to trigger the branch selection
+    mock_branch = MagicMock()
+    mock_branch.name = "feature-xyz"
+    mock_client.get_repo.return_value.get_branches.return_value = [mock_branch]
+    
+    mock_select_branches.return_value = ["feature-xyz"]
+    
+    runner = CliRunner()
+    result = runner.invoke(cli, ["run", "-r", "owner/repo", "-n", "42"])
+    
+    assert result.exit_code == 0
+    mock_select_branches.assert_called_once_with(["feature-xyz"])
+    mock_select_task.assert_called_once()
+    mock_run_pipeline.assert_called_once()
+    config_passed = mock_run_pipeline.call_args[1]["config"]
+    assert config_passed.collection.max_commits_per_repo == 42
+    assert config_passed.collection.max_prs_per_repo == 42
+    assert config_passed.collection.branches == ["feature-xyz"]
 

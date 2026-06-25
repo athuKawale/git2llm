@@ -59,7 +59,8 @@ def repos():
 @click.option("--no-private", is_flag=True, help="Skip private repositories")
 @click.option("--dry-run", is_flag=True, help="Run filtering without writing JSONL")
 @click.option("--branch", "-b", multiple=True, help="Specific git branches to mine (default: all)")
-def run(repos, output_format, task, output, config_file, profile, workers, since, languages, min_stars, no_private, dry_run, branch):
+@click.option("--limit", "-n", default=None, type=int, help="Limit number of recent commits to cover")
+def run(repos, output_format, task, output, config_file, profile, workers, since, languages, min_stars, no_private, dry_run, branch, limit):
     """Run the mining, filtering and generation pipeline."""
     # 1. Load config
     if config_file:
@@ -88,7 +89,6 @@ def run(repos, output_format, task, output, config_file, profile, workers, since
 
     # 3. Discover/Select repos
     selected_repos = list(repos)
-    is_interactive = not selected_repos
     if not selected_repos:
         # If no repos provided via CLI, load list and show interactive selector
         try:
@@ -109,18 +109,16 @@ def run(repos, output_format, task, output, config_file, profile, workers, since
             if not selected_repos:
                 click.echo("No repositories selected.")
                 return
-                
-            if task is None:
-                task = select_task()
         except Exception as e:
             click.echo(click.style(f"Error listing repositories: {e}", fg="red"))
             return
-    else:
-        if task is None:
-            if config_file:
-                task = app_config.task
-            else:
-                task = "commit_message"
+
+    # 3.5 Resolve task (prompt if not specified in CLI and not loading a config file)
+    if task is None:
+        if config_file:
+            task = app_config.task
+        else:
+            task = select_task()
 
     # 4. Apply CLI parameter overrides to AppConfig
     if output_format is not None:
@@ -133,6 +131,9 @@ def run(repos, output_format, task, output, config_file, profile, workers, since
     app_config.task = task
     if workers is not None:
         app_config.max_workers = workers
+    if limit is not None:
+        app_config.collection.max_commits_per_repo = limit
+        app_config.collection.max_prs_per_repo = limit
     
     if since:
         try:
@@ -142,7 +143,7 @@ def run(repos, output_format, task, output, config_file, profile, workers, since
             return
 
     if not branch:
-        if is_interactive:
+        if not app_config.collection.branches:
             try:
                 logger.info("Fetching branches for selected repositories...")
                 all_branches = set()
@@ -159,11 +160,41 @@ def run(repos, output_format, task, output, config_file, profile, workers, since
             except Exception as e:
                 logger.warning(f"Failed to fetch branches from GitHub API: {e}. Defaulting to all branches.")
                 app_config.collection.branches = []
-        else:
-            # Keep whatever is already loaded in app_config.collection.branches (e.g. from YAML or profile)
-            pass
     else:
         app_config.collection.branches = list(branch)
+
+    # Calculate and show commit counts over target branches
+    try:
+        click.echo("\n" + "-" * 50)
+        click.echo("Calculating total commits over selected branches...")
+        since_dt = None
+        if app_config.collection.since:
+            from datetime import datetime
+            since_dt = datetime.combine(app_config.collection.since, datetime.min.time())
+            
+        for repo_name in selected_repos:
+            repo_obj = g.get_repo(repo_name)
+            target_branches = app_config.collection.branches
+            if not target_branches:
+                target_branches = [repo_obj.default_branch]
+            
+            total_commits_all_branches = 0
+            click.echo(f"Repository: {repo_name}")
+            for b_name in target_branches:
+                try:
+                    kwargs = {"sha": b_name}
+                    if since_dt:
+                        kwargs["since"] = since_dt
+                    commits_count = repo_obj.get_commits(**kwargs).totalCount
+                    click.echo(f"  - Branch '{b_name}': {commits_count} commits")
+                    total_commits_all_branches += commits_count
+                except Exception as b_ex:
+                    logger.warning(f"Could not get commit count for branch {b_name}: {b_ex}")
+            if len(target_branches) > 1:
+                click.echo(f"  - Sum of commits across selected branches: {total_commits_all_branches}")
+        click.echo("-" * 50 + "\n")
+    except Exception as e:
+        logger.warning(f"Could not calculate commit counts: {e}")
 
     # 5. Initialize Writer
     writer = DatasetWriter(output)

@@ -38,8 +38,10 @@ class CommitCollector(BaseCollector):
         return ext_map.get(ext)
 
     def collect(self) -> List[CommitRecord]:
+        max_commits = self.config.collection.max_commits_per_repo
+        depth = max(100, max_commits + 50)
         try:
-            local_path = clone_repo(self.repo_name, self.token)
+            local_path = clone_repo(self.repo_name, self.token, depth=depth)
         except Exception as e:
             logger.error(f"Cannot clone repository {self.repo_name}: {e}")
             return []
@@ -53,7 +55,6 @@ class CommitCollector(BaseCollector):
         branches = self.config.collection.branches or []
         records = []
         seen_shas = set()
-        max_commits = self.config.collection.max_commits_per_repo
 
         def process_commit(commit):
             if commit.hash in seen_shas:
@@ -106,11 +107,18 @@ class CommitCollector(BaseCollector):
                 # Traverse all branches using include_remotes=True
                 kwargs = {**base_kwargs, "include_remotes": True, "order": "reverse"}
                 repo_miner = Repository(local_path, **kwargs)
-                for commit in repo_miner.traverse_commits():
-                    if len(records) >= max_commits:
-                        logger.info(f"Reached commit limit of {max_commits} for {self.repo_name}")
-                        break
-                    process_commit(commit)
+                try:
+                    for commit in repo_miner.traverse_commits():
+                        if len(records) >= max_commits:
+                            logger.info(f"Reached commit limit of {max_commits} for {self.repo_name}")
+                            break
+                        process_commit(commit)
+                except Exception as traversal_err:
+                    err_str = str(traversal_err)
+                    if "diff-tree" in err_str or "exit code(-2)" in err_str or "exit code -2" in err_str or "Cmd('git') failed" in err_str:
+                        logger.info(f"Reached shallow clone boundary for {self.repo_name} (parent commit not found). Stopping commit collection.")
+                    else:
+                        raise
             else:
                 # Traverse specific branches
                 for branch in branches:
@@ -134,9 +142,17 @@ class CommitCollector(BaseCollector):
                                 break
                             process_commit(commit)
                     except Exception as branch_err:
-                        logger.warning(f"Branch {branch} not found or error mining in {self.repo_name}: {branch_err}")
+                        err_str = str(branch_err)
+                        if "diff-tree" in err_str or "exit code(-2)" in err_str or "exit code -2" in err_str or "Cmd('git') failed" in err_str:
+                            logger.info(f"Reached shallow clone boundary for branch {branch} in {self.repo_name}. Stopping branch collection.")
+                        else:
+                            logger.warning(f"Branch {branch} not found or error mining in {self.repo_name}: {branch_err}")
         except Exception as e:
-            logger.error(f"Error traversing commits for {self.repo_name}: {e}")
+            err_str = str(e)
+            if "diff-tree" in err_str or "exit code(-2)" in err_str or "exit code -2" in err_str or "Cmd('git') failed" in err_str:
+                logger.info(f"Reached shallow clone boundary for {self.repo_name}. Stopping commit collection.")
+            else:
+                logger.error(f"Error traversing commits for {self.repo_name}: {e}")
             
         logger.info(f"Collected {len(records)} raw commits from {self.repo_name}")
         return records

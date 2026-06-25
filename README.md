@@ -228,6 +228,9 @@ uv run git2llm run --format sharegpt
 # Run with a built-in profile preset (default, strict, permissive)
 uv run git2llm run -r owner/repo1 --profile permissive
 
+# Run with a custom commit limit (cover only the N most recent commits)
+uv run git2llm run -r owner/repo1 -n 100
+
 # Run with a custom config file
 uv run git2llm run \
   -r owner/repo1 -r owner/repo2 \
