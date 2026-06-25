@@ -3,7 +3,7 @@ from datetime import date
 import click
 from git2llm.auth import PATAuth
 from git2llm.auth.token_store import save_token, clear_token
-from git2llm.discovery import list_accessible_repos, select_repos, select_branches
+from git2llm.discovery import list_accessible_repos, select_repos, select_branches, select_task
 from git2llm.config import AppConfig, FilterConfig, CollectionConfig
 from git2llm.writer import DatasetWriter
 from git2llm.orchestrator import run_pipeline
@@ -48,7 +48,7 @@ def repos():
 @cli.command()
 @click.option("--repos", "-r", multiple=True, help="Repositories to process (owner/repo)")
 @click.option("--format", "-f", "output_format", default="alpaca", type=click.Choice(["alpaca", "sharegpt"]), help="Output schema format")
-@click.option("--task", "-t", default="commit_message", type=click.Choice(["commit_message", "pr_review", "issue_to_patch", "all"]), help="Task type to generate")
+@click.option("--task", "-t", default=None, type=click.Choice(["commit_message", "pr_review", "issue_to_patch", "all"]), help="Task type to generate")
 @click.option("--output", "-o", default="./git2llm_output/", help="Output directory")
 @click.option("--config", "config_file", help="Path to config YAML file")
 @click.option("--profile", "-p", default="default", type=click.Choice(["default", "strict", "permissive"]), help="Built-in config profile to use")
@@ -108,9 +108,18 @@ def run(repos, output_format, task, output, config_file, profile, workers, since
             if not selected_repos:
                 click.echo("No repositories selected.")
                 return
+                
+            if task is None:
+                task = select_task()
         except Exception as e:
             click.echo(click.style(f"Error listing repositories: {e}", fg="red"))
             return
+    else:
+        if task is None:
+            if config_file:
+                task = app_config.task
+            else:
+                task = "commit_message"
 
     # 4. Apply CLI parameter overrides to AppConfig
     app_config.output_format = output_format

@@ -12,6 +12,7 @@ filter:
   min_files_changed: 1
   
   min_content_score: 0.7
+  min_alignment_score: 0.25
   require_verb_start: true
   exclude_wip_messages: true
   
@@ -20,6 +21,7 @@ filter:
   
   min_pr_body_words: 40
   require_linked_issue: true
+  min_issue_to_patch_words: 30
 
 collection:
   max_commits_per_repo: 1000

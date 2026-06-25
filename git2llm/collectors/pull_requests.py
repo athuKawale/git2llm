@@ -69,9 +69,17 @@ class PRCollector(BaseCollector):
                     # Wait, sorting by updated desc means we can't completely break, but we can skip.
                     continue
 
-            # Parse linked issues from body
+            # Parse linked issues from body (match #<num>, issues/<num>, pulls/<num>)
             body_text = pr.body or ""
-            linked_issues = [int(num) for num in CLOSES_PATTERN.findall(body_text)]
+            issue_mentions = re.findall(r'#(\d+)', body_text)
+            url_mentions = re.findall(r'(?:issues|pulls)/(\d+)', body_text)
+            
+            all_numbers = set()
+            for num in issue_mentions + url_mentions:
+                val = int(num)
+                if val != pr.number:
+                    all_numbers.add(val)
+            linked_issues = sorted(list(all_numbers))
 
             # Fetch review comments
             review_comments = []

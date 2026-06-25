@@ -46,3 +46,18 @@ def select_branches(branch_names: List[str]) -> List[str]:
         return []
     return result
 
+def select_task() -> str:
+    """Present interactive single-select UI to pick a dataset task."""
+    choices = [
+        Choice(value="commit_message", name="commit_message: Mine diffs to generate conventional commit messages"),
+        Choice(value="pr_review", name="pr_review: Mine PRs & review comments to generate code reviews"),
+        Choice(value="issue_to_patch", name="issue_to_patch: Mine linked issues & PR descriptions to generate patches/diffs"),
+        Choice(value="all", name="all: Generate all supported task datasets"),
+    ]
+    result = inquirer.select(
+        message="Select dataset generation task:",
+        choices=choices,
+        vi_mode=False
+    ).execute()
+    return result
+

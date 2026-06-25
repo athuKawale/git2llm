@@ -21,6 +21,7 @@ class FilterConfig(BaseModel):
     
     # Content quality
     min_content_score: float = 0.5    # 0.0–1.0
+    min_alignment_score: float = 0.0  # Min overlap score between commit message & diff
     require_verb_start: bool = True    # V-DO pattern
     exclude_wip_messages: bool = True
     
@@ -31,6 +32,7 @@ class FilterConfig(BaseModel):
     # PR-specific
     min_pr_body_words: int = 20
     require_linked_issue: bool = False
+    min_issue_to_patch_words: int = 20  # Minimum words in issue_to_patch description
     
 class CollectionConfig(BaseModel):
     max_commits_per_repo: int = 5000
@@ -52,12 +54,14 @@ DEFAULT_PROFILES = {
             "max_files_changed": 20,
             "min_files_changed": 1,
             "min_content_score": 0.5,
+            "min_alignment_score": 0.15,
             "require_verb_start": True,
             "exclude_wip_messages": True,
             "dedup_method": "minhash",
             "dedup_threshold": 0.85,
             "min_pr_body_words": 20,
             "require_linked_issue": False,
+            "min_issue_to_patch_words": 20,
         },
         "collection": {
             "max_commits_per_repo": 5000,
@@ -81,12 +85,14 @@ DEFAULT_PROFILES = {
             "max_files_changed": 10,
             "min_files_changed": 1,
             "min_content_score": 0.7,
+            "min_alignment_score": 0.25,
             "require_verb_start": True,
             "exclude_wip_messages": True,
             "dedup_method": "minhash",
             "dedup_threshold": 0.80,
             "min_pr_body_words": 40,
             "require_linked_issue": True,
+            "min_issue_to_patch_words": 30,
         },
         "collection": {
             "max_commits_per_repo": 1000,
@@ -110,12 +116,14 @@ DEFAULT_PROFILES = {
             "max_files_changed": 30,
             "min_files_changed": 1,
             "min_content_score": 0.2,
+            "min_alignment_score": 0.0,
             "require_verb_start": False,
             "exclude_wip_messages": False,
             "dedup_method": "exact",
             "dedup_threshold": 0.95,
             "min_pr_body_words": 5,
             "require_linked_issue": False,
+            "min_issue_to_patch_words": 0,
         },
         "collection": {
             "max_commits_per_repo": 10000,

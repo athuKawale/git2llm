@@ -82,10 +82,11 @@ The project relies on the following key dependencies:
    - **Tags**: Gathers release notes for version changelog generation tasks.
 4. **4-Stage Quality Pipeline**:
    - **Stage 1 (Exclusions)**: Ignores merge commits, bot authors, revert commits, binary/lockfiles, and draft/WIP messages.
-   - **Stage 2 (Structural)**: Filters based on message word count, diff lines (prevents too small/large diffs), and changed file count.
-   - **Stage 3 (Scoring)**: Evaluates message informativeness and V-DO (Verb-Direct Object) imperative start patterns (e.g. *Add*, *Fix*, *Refactor*).
+   - **Stage 2 (Structural)**: Filters based on message/PR word count, diff lines (prevents too small/large diffs), changed file count, and minimum issue description length (`min_issue_to_patch_words`).
+   - **Stage 3 (Scoring & Alignment)**: Evaluates message informativeness, V-DO (Verb-Direct Object) imperative start patterns (e.g., *Add*, *Fix*, *Refactor*), and semantic overlap between commit messages and code diffs (`min_alignment_score`).
    - **Stage 4 (Deduplication)**: Eliminates identical or near-duplicate commits/diffs using MinHash LSH (Jaccard similarity).
 5. **Output Schemas**: Formats datasets directly into **Alpaca** (`instruction`/`input`/`output`) or **ShareGPT** (`conversations` list) format.
+6. **Context Optimization (`issue_to_patch`)**: Combines PR titles, descriptions, and linked issues while stripping HTML comment templates, and enforces a configurable minimum word count constraint (`min_issue_to_patch_words`) to ensure high-quality fine-tuning samples.
 
 ---
 
@@ -115,6 +116,63 @@ git2llm/
 ├── pyproject.toml              # Build settings and dependencies
 └── README.md
 ```
+
+---
+
+## Dataset Generation Tasks
+
+`git2llm` supports generating datasets for three primary training tasks. Each task generates standard instruction tuning records (available in Alpaca or ShareGPT format):
+
+### 1. `commit_message`
+- **Purpose**: Trains models to generate conventional commit messages from code changes.
+- **Pipeline Flow**: Traverses commits locally, filters out merges/bots/reverts, evaluates imperative verb usage, and checks semantic alignment.
+- **Command**:
+  ```bash
+  uv run git2llm run -r owner/repo -t commit_message --format [alpaca|sharegpt]
+  ```
+- **Configuration Params (YAML / Profiles)**:
+  - `min_commit_message_words` (default: `5`): Minimum words required in the commit message.
+  - `max_commit_message_chars` (default: `500`): Maximum characters allowed.
+  - `min_content_score` (default: `0.5`): Minimum score based on verb start, informativeness, and language.
+  - `min_alignment_score` (default: `0.15`): Hard filter requiring minimum token overlap between the commit message and the diff.
+  - `require_verb_start` (default: `true`): Requires the commit message to start with an imperative verb (e.g. *Add*, *Fix*, *Refactor*).
+- **Dataset Structure (Alpaca)**:
+  - **Instruction**: `"You are an expert software engineer. Given a code diff, write a clear and informative commit message."`
+  - **Input**: The unified git diff.
+  - **Output**: The conventional commit subject line.
+
+### 2. `pr_review`
+- **Purpose**: Trains models to perform code reviews and write inline feedback comments.
+- **Pipeline Flow**: Gathers merged PRs, collects inline review comments with their diff hunks, and filters out short description PRs.
+- **Command**:
+  ```bash
+  uv run git2llm run -r owner/repo -t pr_review --format [alpaca|sharegpt]
+  ```
+- **Configuration Params (YAML / Profiles)**:
+  - `min_pr_body_words` (default: `20`): Discards PRs where the description is too short.
+  - `dedup_threshold` (default: `0.85`): Removes near-duplicate PR diffs using MinHash LSH.
+- **Dataset Structure (ShareGPT)**:
+  - **Conversations**:
+    - `system`: Code review system prompt.
+    - `human`: PR title, description, and the full PR diff.
+    - `gpt`: Inline review comments, formatted with paths, contextual diff hunks, and review feedback.
+
+### 3. `issue_to_patch`
+- **Purpose**: Trains autonomous coding agents to generate patches/diffs from issue descriptions and PR descriptions.
+- **Pipeline Flow**: Gathers PRs and their linked issues, strips out HTML templates, merges description texts, and validates length.
+- **Command**:
+  ```bash
+  uv run git2llm run -r owner/repo -t issue_to_patch --format [alpaca|sharegpt]
+  ```
+- **Configuration Params (YAML / Profiles)**:
+  - `min_issue_to_patch_words` (default: `20`): Discards examples where the combined description context is too short.
+  - `require_linked_issue` (default: `false`): If `true`, only processes PRs that have explicitly linked issues.
+  - `min_diff_lines` (default: `3`): Minimum lines required in the diff patch.
+  - `max_diff_lines` (default: `500`): Maximum lines allowed in the patch.
+- **Dataset Structure (Alpaca)**:
+  - **Instruction**: `"You are an expert software engineer. Given the issue description and the current state of the relevant file(s), produce a minimal, correct git patch that resolves the issue."`
+  - **Input**: The combined PR title, PR description body, and linked issue bodies (with HTML comments stripped).
+  - **Output**: The unified patch/diff.
 
 ---
 
@@ -230,6 +288,22 @@ Run all unit and integration test suites:
 ```bash
 uv run pytest
 ```
+
+---
+
+## Coding Standards
+
+- **Code Style**: Follow PEP 8 guidelines. Format code using standard tools (such as Ruff or Black).
+- **Validation**: All configuration profiles and API contracts are defined using Pydantic v2 models.
+- **Commits**: Follow Conventional Commits format (`feat: ...`, `fix: ...`, `refactor: ...`) for all development contributions.
+
+---
+
+## Contributing
+
+1. Fork the repository and create a new branch.
+2. Ensure new features are covered by unit or integration tests.
+3. Verify that all tests pass (`uv run pytest`) before opening a pull request.
 
 ---
 

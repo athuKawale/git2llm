@@ -11,10 +11,12 @@ class RateLimiter:
         """Check current core rate limit and sleep if it is low."""
         try:
             rate_limit = self.g.get_rate_limit()
-            core = rate_limit.core
+            core = rate_limit.rate
             
             if core.remaining < 100:
-                reset_time = core.reset.replace(tzinfo=timezone.utc)
+                reset_time = core.reset
+                if reset_time.tzinfo is None:
+                    reset_time = reset_time.replace(tzinfo=timezone.utc)
                 now = datetime.now(timezone.utc)
                 wait_seconds = max((reset_time - now).total_seconds() + 5, 0)
                 

@@ -164,6 +164,15 @@ def process_repo(
                 pr.linked_issue_bodies = linked_bodies
                 
                 formatted_patch = format_issue_pr_to_alpaca(pr)
+                
+                # Check combined input word count threshold
+                input_words = len(formatted_patch["input"].strip().split())
+                min_patch_words = getattr(config.filter, "min_issue_to_patch_words", 20)
+                if input_words < min_patch_words:
+                    if not dry_run:
+                        writer.write_excluded(pr.model_dump(mode='json'), "stage3", "content_quality:insufficient_context")
+                    continue
+                    
                 if not dry_run:
                     writer.write_passed(formatted_patch, task_type="issue_to_patch")
 

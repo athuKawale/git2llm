@@ -11,6 +11,11 @@ def test_load_from_profile():
         assert config.filter is not None
         assert config.collection is not None
 
+    # Verify specific min_alignment_score values per profile
+    assert AppConfig.load_from_profile("default").filter.min_alignment_score == 0.15
+    assert AppConfig.load_from_profile("strict").filter.min_alignment_score == 0.25
+    assert AppConfig.load_from_profile("permissive").filter.min_alignment_score == 0.0
+
     # Test invalid profile
     with pytest.raises(ValueError, match="Unknown config profile"):
         AppConfig.load_from_profile("invalid_profile_name")

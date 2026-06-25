@@ -28,11 +28,37 @@ def format_commit_to_alpaca(commit: CommitRecord, score: float = 1.0) -> Dict[st
         }
     }
 
+import re
+
+def strip_html_comments(text: str) -> str:
+    """Remove HTML comments from a string."""
+    if not text:
+        return ""
+    return re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL).strip()
+
 def format_issue_pr_to_alpaca(pr: PRRecord, score: float = 1.0) -> Dict[str, Any]:
     """Format linked Issue + PR to Alpaca schema (issue_to_patch task) with _meta."""
-    # Combine all linked issue bodies as instruction/input context
-    issues_text = "\n\n".join(pr.linked_issue_bodies) if pr.linked_issue_bodies else pr.title
+    parts = []
     
+    # 1. Add linked issue bodies (stripped of HTML comments)
+    if pr.linked_issue_bodies:
+        for body in pr.linked_issue_bodies:
+            cleaned_body = strip_html_comments(body)
+            if cleaned_body:
+                parts.append(cleaned_body)
+                
+    # 2. Add PR description (stripped of HTML comments)
+    if pr.body:
+        cleaned_pr_body = strip_html_comments(pr.body)
+        if cleaned_pr_body:
+            parts.append(f"PR Description:\n{cleaned_pr_body}")
+            
+    # 3. Combine parts, fallback to title if empty
+    if parts:
+        issues_text = "\n\n".join(parts)
+    else:
+        issues_text = pr.title
+        
     return {
         "instruction": ISSUE_TO_PATCH_INSTRUCTION,
         "input": issues_text,

@@ -78,3 +78,15 @@ def test_format_pr_to_sharegpt(dummy_pr):
     assert res["conversations"][2]["from"] == "gpt"
     assert "Consider using a schema validator" in res["conversations"][2]["value"]
     assert res["_meta"]["pr_number"] == 42
+
+def test_format_issue_pr_to_alpaca_comment_stripping(dummy_pr):
+    dummy_pr.body = "<!-- template comment -->Actual description of the PR."
+    dummy_pr.linked_issue_bodies = ["<!-- issue template -->Issue details."]
+    
+    res = format_issue_pr_to_alpaca(dummy_pr, score=0.8)
+    
+    # Assert that HTML comments are stripped
+    assert "template comment" not in res["input"]
+    assert "issue template" not in res["input"]
+    assert "Actual description of the PR" in res["input"]
+    assert "Issue details" in res["input"]

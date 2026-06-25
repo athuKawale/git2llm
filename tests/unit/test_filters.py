@@ -131,3 +131,12 @@ def test_deduplicator(base_commit):
     is_dup3 = dedup.add_and_check("rec3", text3, diff1)
     assert is_dup3 is True
 
+def test_low_alignment_commit_excluded(base_commit):
+    config = FilterConfig(min_alignment_score=0.15)
+    # Commit message has no words overlapping with the diff in base_commit (JWT auth.py)
+    base_commit.message_subject = "refactor: optimize database connection pooling logic"
+    
+    passed, score, reason = check_content_quality(base_commit, config)
+    assert passed is False
+    assert reason == "content_quality:alignment_below_threshold"
+

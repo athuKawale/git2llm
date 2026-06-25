@@ -108,6 +108,11 @@ def check_content_quality(commit: CommitRecord, config: FilterConfig) -> Tuple[b
         0.2 * l_score
     )
     
+    # Alignment check
+    min_align = getattr(config, "min_alignment_score", 0.0)
+    if a_score < min_align:
+        return False, score, "content_quality:alignment_below_threshold"
+
     # Optional constraint: require verb start (V-DO pattern)
     if config.require_verb_start and v_score < 1.0:
         return False, score, "content_quality:no_verb_start"
