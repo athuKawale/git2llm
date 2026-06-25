@@ -127,7 +127,18 @@ def process_repo(
         prs = pr_collector.collect()
         writer.record_raw_counts(prs=len(prs))
         
-        issue_collector = IssueCollector(repo_name, config, token)
+        issue_collector = IssueCollector(repo_name, config, token, max_workers=config.max_workers)
+        
+        # Prefetch all linked issue bodies in parallel before the PR loop
+        # to avoid sequential one-by-one API calls per PR
+        all_linked_numbers = []
+        for pr in prs:
+            all_linked_numbers.extend(pr.linked_issue_numbers)
+        
+        if all_linked_numbers and config.task in {"all", "issue_to_patch"}:
+            if progress and repo_task_id:
+                progress.update(repo_task_id, description=f"[cyan][{repo_name}] Prefetching {len(set(all_linked_numbers))} linked issues...")
+            issue_collector.prefetch_issues(all_linked_numbers)
         
         for pr in prs:
             # Stage 2: Structural Checks (PR specific)
@@ -213,7 +224,8 @@ def run_pipeline(
     
     max_workers = min(config.max_workers, len(repos)) if len(repos) > 0 else 1
     
-    logger.info(f"Starting pipeline for {len(repos)} repos using {max_workers} worker threads...")
+    logger.info(f"Starting pipeline for {len(repos)} repos using {max_workers} repo-worker thread(s)...")
+    logger.info("(Use -w to add more parallel repo workers when processing multiple repos)")
     
     with Progress(
         SpinnerColumn(),

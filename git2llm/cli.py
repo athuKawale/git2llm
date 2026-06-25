@@ -1,6 +1,9 @@
 import os
 from datetime import date
 import click
+from rich.console import Console
+from rich.panel import Panel
+from rich.text import Text
 from git2llm.auth import PATAuth
 from git2llm.auth.token_store import save_token, clear_token
 from git2llm.discovery import list_accessible_repos, select_repos, select_branches, select_task
@@ -9,6 +12,9 @@ from git2llm.writer import DatasetWriter
 from git2llm.orchestrator import run_pipeline
 from git2llm.utils.logging import setup_logging, logger
 from git2llm.utils.split import split_jsonl_file
+from git2llm.utils.repo_health import check_repo_pr_health, format_health_warning
+
+_console = Console()
 
 @click.group()
 @click.option("--debug", is_flag=True, help="Enable debug logging")
@@ -52,7 +58,7 @@ def repos():
 @click.option("--output", "-o", default="./git2llm_output/", help="Output directory")
 @click.option("--config", "config_file", help="Path to config YAML file")
 @click.option("--profile", "-p", default="default", type=click.Choice(["default", "strict", "permissive"]), help="Built-in config profile to use")
-@click.option("--workers", "-w", default=None, type=int, help="Parallel worker threads")
+@click.option("--workers", "-w", default=None, type=int, help="Parallel repo worker threads (speeds up multi-repo runs; within a single repo, PR fetching already uses 8 parallel threads)")
 @click.option("--since", help="Earliest date to collect from (YYYY-MM-DD)")
 @click.option("--languages", "-l", multiple=True, help="Filter files by programming language")
 @click.option("--min-stars", default=0, type=int, help="Skip repositories below star count")
@@ -195,6 +201,77 @@ def run(repos, output_format, task, output, config_file, profile, workers, since
         click.echo("-" * 50 + "\n")
     except Exception as e:
         logger.warning(f"Could not calculate commit counts: {e}")
+
+    # 4.5 Pre-flight: repo health check for PR tasks
+    # Only run when the user wants PR data — skip for commit_message-only runs.
+    PR_TASKS = {"pr_review", "issue_to_patch", "all"}
+    if app_config.task in PR_TASKS:
+        flagged_repos = []
+        click.echo("\nRunning pre-flight repo health check...")
+        for repo_name in selected_repos:
+            result = check_repo_pr_health(g, repo_name, sample_size=30)
+            if not result.is_github_native:
+                flagged_repos.append(result)
+
+        if flagged_repos:
+            click.echo("")
+            for result in flagged_repos:
+                warning_text = format_health_warning(result)
+                _console.print(
+                    Panel(
+                        warning_text,
+                        title=f"[bold red]⚠  External Review System Detected[/bold red]",
+                        border_style="yellow",
+                        expand=False,
+                    )
+                )
+
+            # Prompt user for how to proceed
+            choices = []
+            if len(flagged_repos) < len(selected_repos):
+                choices.append(("skip", "Skip flagged repos, continue with healthy ones"))
+            choices += [
+                ("continue", "Continue anyway (may yield 0 PR records for flagged repos)"),
+                ("abort", "Abort and choose different repos"),
+            ]
+
+            click.echo("How would you like to proceed?")
+            for i, (key, label) in enumerate(choices, 1):
+                click.echo(f"  [{i}] {label}")
+
+            choice_keys = [k for k, _ in choices]
+            while True:
+                raw = click.prompt(
+                    "Enter choice",
+                    default="1",
+                    show_default=True,
+                ).strip()
+                try:
+                    idx = int(raw) - 1
+                    if 0 <= idx < len(choices):
+                        chosen = choice_keys[idx]
+                        break
+                except ValueError:
+                    pass
+                click.echo(f"  Please enter a number between 1 and {len(choices)}.")
+
+            if chosen == "abort":
+                click.echo(click.style("Aborted. Please re-run with different repositories.", fg="yellow"))
+                return
+            elif chosen == "skip":
+                flagged_names = {r.repo_name for r in flagged_repos}
+                selected_repos = [r for r in selected_repos if r not in flagged_names]
+                if not selected_repos:
+                    click.echo(click.style("No repos left after skipping flagged ones. Aborting.", fg="red"))
+                    return
+                click.echo(click.style(
+                    f"Skipped {len(flagged_repos)} repo(s). Continuing with {len(selected_repos)} repo(s).",
+                    fg="green"
+                ))
+            else:
+                click.echo(click.style("Continuing despite warning(s)...", fg="yellow"))
+        else:
+            click.echo(click.style("✓ All repos look healthy for PR collection.", fg="green"))
 
     # 5. Initialize Writer
     writer = DatasetWriter(output)

@@ -81,34 +81,63 @@ class PRCollector(BaseCollector):
         )
 
     def collect(self) -> List[PRRecord]:
-        g = Github(self.token)
+        # Use per_page=100 at client level to minimize API round-trips (default is 30)
+        g = Github(self.token, per_page=100)
         try:
             repo = g.get_repo(self.repo_name)
         except Exception as e:
             logger.error(f"Failed to get repo {self.repo_name} for PR collection: {e}")
             return []
 
+        max_prs = self.config.collection.max_prs_per_repo
+        # Cap how many closed PRs we scan to avoid spending forever on repos
+        # where many PRs were closed-without-merge (e.g. golang/go mirrors issues as PRs).
+        # Scan at most 5x the target to find enough merged ones.
+        max_scan = max_prs * 5
+
         if self.progress and self.task_id:
-            self.progress.update(self.task_id, description=f"[cyan][{self.repo_name}] Fetching PR list...")
+            self.progress.update(
+                self.task_id,
+                description=f"[cyan][{self.repo_name}] Scanning PRs (found 0/{max_prs})..."
+            )
 
         limiter = RateLimiter(g, check_interval=50)
 
-        # Get closed pulls — collect candidate PRs first (lightweight)
         pulls = repo.get_pulls(state="closed", sort="updated", direction="desc")
-        max_prs = self.config.collection.max_prs_per_repo
 
         candidates = []
+        scanned = 0
         for pr in pulls:
-            limiter.check_and_wait()
-            if len(candidates) >= max_prs:
+            # NOTE: Do NOT call limiter.check_and_wait() here in the scan loop —
+            # just iterating the PaginatedList already uses API calls, and calling
+            # check_and_wait() additionally slows down the scan significantly.
+            scanned += 1
+
+            if len(candidates) >= max_prs or scanned > max_scan:
                 break
-            if not pr.merged:
+
+            # Use merged_at instead of pr.merged — pr.merged triggers a full per-PR
+            # API fetch, while merged_at is included in the list response for free.
+            if pr.merged_at is None:
+                # Update description every 25 scanned so user sees progress
+                if self.progress and self.task_id and scanned % 25 == 0:
+                    self.progress.update(
+                        self.task_id,
+                        description=f"[cyan][{self.repo_name}] Scanning PRs (found {len(candidates)}/{max_prs}, scanned {scanned})..."
+                    )
                 continue
+
             if self.config.collection.since:
                 since_dt = self.config.collection.since
-                if pr.merged_at and pr.merged_at.date() < since_dt:
+                if pr.merged_at.date() < since_dt:
                     continue
+
             candidates.append(pr)
+            if self.progress and self.task_id:
+                self.progress.update(
+                    self.task_id,
+                    description=f"[cyan][{self.repo_name}] Scanning PRs (found {len(candidates)}/{max_prs}, scanned {scanned})..."
+                )
 
         if self.progress and self.task_id:
             self.progress.update(
@@ -144,5 +173,5 @@ class PRCollector(BaseCollector):
                 self.progress.advance(self.task_id, remaining)
             self.progress.update(self.task_id, description=f"[cyan][{self.repo_name}] PRs collected.")
 
-        logger.info(f"Collected {len(records)} merged PRs for {self.repo_name}")
+        logger.info(f"Collected {len(records)} merged PRs from {scanned} scanned for {self.repo_name}")
         return records
