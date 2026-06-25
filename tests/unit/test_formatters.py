@@ -4,7 +4,8 @@ from git2llm.models import CommitRecord, FileChange, PRRecord, ReviewComment
 from git2llm.formatters import (
     format_commit_to_alpaca,
     format_issue_pr_to_alpaca,
-    format_pr_to_sharegpt
+    format_pr_to_sharegpt,
+    format_issue_pr_to_sharegpt
 )
 
 @pytest.fixture
@@ -90,3 +91,15 @@ def test_format_issue_pr_to_alpaca_comment_stripping(dummy_pr):
     assert "issue template" not in res["input"]
     assert "Actual description of the PR" in res["input"]
     assert "Issue details" in res["input"]
+
+def test_format_issue_pr_to_sharegpt(dummy_pr):
+    res = format_issue_pr_to_sharegpt(dummy_pr, score=0.9)
+    assert len(res["conversations"]) == 3
+    assert res["conversations"][0]["from"] == "system"
+    assert res["conversations"][1]["from"] == "human"
+    assert res["conversations"][2]["from"] == "gpt"
+    assert "Issue #101" in res["conversations"][1]["value"]
+    assert "validate" in res["conversations"][2]["value"]
+    assert res["_meta"]["pr_number"] == 42
+    assert res["_meta"]["score"] == 0.9
+

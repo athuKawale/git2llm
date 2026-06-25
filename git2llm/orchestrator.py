@@ -14,7 +14,8 @@ from git2llm.filters import (
 from git2llm.formatters import (
     format_commit_to_alpaca,
     format_issue_pr_to_alpaca,
-    format_pr_to_sharegpt
+    format_pr_to_sharegpt,
+    format_issue_pr_to_sharegpt
 )
 from git2llm.writer import DatasetWriter
 from git2llm.utils.logging import logger
@@ -163,10 +164,15 @@ def process_repo(
                         linked_bodies.append(f"Issue #{num}:\n{body}")
                 pr.linked_issue_bodies = linked_bodies
                 
-                formatted_patch = format_issue_pr_to_alpaca(pr)
+                if config.output_format == "sharegpt":
+                    formatted_patch = format_issue_pr_to_sharegpt(pr)
+                    input_text = formatted_patch["conversations"][1]["value"]
+                else:
+                    formatted_patch = format_issue_pr_to_alpaca(pr)
+                    input_text = formatted_patch["input"]
                 
                 # Check combined input word count threshold
-                input_words = len(formatted_patch["input"].strip().split())
+                input_words = len(input_text.strip().split())
                 min_patch_words = getattr(config.filter, "min_issue_to_patch_words", 20)
                 if input_words < min_patch_words:
                     if not dry_run:

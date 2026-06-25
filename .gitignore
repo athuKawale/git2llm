@@ -12,6 +12,8 @@ wheels/
 # Local git2llm caches and output
 .git2llm_cache/
 git2llm_output/
+django_output/
+test_git2llm_output/
 
 
 .agents/

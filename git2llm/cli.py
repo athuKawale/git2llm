@@ -47,12 +47,12 @@ def repos():
 
 @cli.command()
 @click.option("--repos", "-r", multiple=True, help="Repositories to process (owner/repo)")
-@click.option("--format", "-f", "output_format", default="alpaca", type=click.Choice(["alpaca", "sharegpt"]), help="Output schema format")
+@click.option("--format", "-f", "output_format", default=None, type=click.Choice(["alpaca", "sharegpt"]), help="Output schema format")
 @click.option("--task", "-t", default=None, type=click.Choice(["commit_message", "pr_review", "issue_to_patch", "all"]), help="Task type to generate")
 @click.option("--output", "-o", default="./git2llm_output/", help="Output directory")
 @click.option("--config", "config_file", help="Path to config YAML file")
 @click.option("--profile", "-p", default="default", type=click.Choice(["default", "strict", "permissive"]), help="Built-in config profile to use")
-@click.option("--workers", "-w", default=4, type=int, help="Parallel worker threads")
+@click.option("--workers", "-w", default=None, type=int, help="Parallel worker threads")
 @click.option("--since", help="Earliest date to collect from (YYYY-MM-DD)")
 @click.option("--languages", "-l", multiple=True, help="Filter files by programming language")
 @click.option("--min-stars", default=0, type=int, help="Skip repositories below star count")
@@ -88,6 +88,7 @@ def run(repos, output_format, task, output, config_file, profile, workers, since
 
     # 3. Discover/Select repos
     selected_repos = list(repos)
+    is_interactive = not selected_repos
     if not selected_repos:
         # If no repos provided via CLI, load list and show interactive selector
         try:
@@ -122,9 +123,16 @@ def run(repos, output_format, task, output, config_file, profile, workers, since
                 task = "commit_message"
 
     # 4. Apply CLI parameter overrides to AppConfig
-    app_config.output_format = output_format
+    if output_format is not None:
+        app_config.output_format = output_format
+    else:
+        # If output_format is not passed but we didn't use a config file, profile defaults apply,
+        # which is already in app_config.output_format. But wait, if they specify profile we want that,
+        # otherwise default profile output_format is 'alpaca'.
+        pass
     app_config.task = task
-    app_config.max_workers = workers
+    if workers is not None:
+        app_config.max_workers = workers
     
     if since:
         try:
@@ -134,22 +142,26 @@ def run(repos, output_format, task, output, config_file, profile, workers, since
             return
 
     if not branch:
-        try:
-            logger.info("Fetching branches for selected repositories...")
-            all_branches = set()
-            for repo_name in selected_repos:
-                repo_obj = g.get_repo(repo_name)
-                for b in repo_obj.get_branches():
-                    all_branches.add(b.name)
-            
-            if all_branches:
-                selected_branches = select_branches(list(all_branches))
-                app_config.collection.branches = selected_branches
-            else:
+        if is_interactive:
+            try:
+                logger.info("Fetching branches for selected repositories...")
+                all_branches = set()
+                for repo_name in selected_repos:
+                    repo_obj = g.get_repo(repo_name)
+                    for b in repo_obj.get_branches():
+                        all_branches.add(b.name)
+                
+                if all_branches:
+                    selected_branches = select_branches(list(all_branches))
+                    app_config.collection.branches = selected_branches
+                else:
+                    app_config.collection.branches = []
+            except Exception as e:
+                logger.warning(f"Failed to fetch branches from GitHub API: {e}. Defaulting to all branches.")
                 app_config.collection.branches = []
-        except Exception as e:
-            logger.warning(f"Failed to fetch branches from GitHub API: {e}. Defaulting to all branches.")
-            app_config.collection.branches = []
+        else:
+            # Keep whatever is already loaded in app_config.collection.branches (e.g. from YAML or profile)
+            pass
     else:
         app_config.collection.branches = list(branch)
 
