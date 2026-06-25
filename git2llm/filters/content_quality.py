@@ -21,18 +21,34 @@ STOP_WORDS = {
 }
 
 def verb_start_score(message: str) -> float:
-    words = message.strip().split()
+    """Check if message starts with an imperative verb.
+    
+    Handles both:
+    - Plain: 'Fix crash in parser'
+    - Scoped: 'runtime: fix crash in parser'  (Go, Linux kernel style)
+    - Conventional: 'fix(scope): description'
+    """
+    subject = message.strip()
+    if not subject:
+        return 0.0
+
+    # Strip conventional commit type prefix: 'fix(scope):' or 'feat:'
+    subject = re.sub(r'^\w+\([^)]*\):\s*', '', subject)
+    # Strip plain scope prefix: 'runtime:', 'cmd/link:', 'net/http:' etc.
+    subject = re.sub(r'^[\w/.-]+:\s+', '', subject)
+
+    words = subject.split()
     if not words:
         return 0.0
     # Strip non-alpha characters from first word (like dots, colons, brackets)
     first_word = re.sub(r'[^a-zA-Z]', '', words[0]).lower()
-    
+
     # Handle third person (e.g. "fixes" -> "fix")
     if first_word.endswith('es') and first_word[:-2] in IMPERATIVE_VERBS:
         return 1.0
     if first_word.endswith('s') and not first_word.endswith('ss') and first_word[:-1] in IMPERATIVE_VERBS:
         return 1.0
-        
+
     return 1.0 if first_word in IMPERATIVE_VERBS else 0.0
 
 def informativeness_score(message: str, commit: CommitRecord) -> float:

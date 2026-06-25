@@ -13,7 +13,7 @@ class FilterConfig(BaseModel):
     
     # Structural
     min_commit_message_words: int = 5
-    max_commit_message_chars: int = 500
+    max_commit_message_chars: int = 2000
     min_diff_lines: int = 3
     max_diff_lines: int = 500
     max_files_changed: int = 20
@@ -48,7 +48,7 @@ DEFAULT_PROFILES = {
             "exclude_binary_only": True,
             "exclude_revert_commits": True,
             "min_commit_message_words": 5,
-            "max_commit_message_chars": 500,
+            "max_commit_message_chars": 2000,
             "min_diff_lines": 3,
             "max_diff_lines": 500,
             "max_files_changed": 20,
@@ -79,7 +79,7 @@ DEFAULT_PROFILES = {
             "exclude_binary_only": True,
             "exclude_revert_commits": True,
             "min_commit_message_words": 7,
-            "max_commit_message_chars": 300,
+            "max_commit_message_chars": 1000,
             "min_diff_lines": 5,
             "max_diff_lines": 300,
             "max_files_changed": 10,

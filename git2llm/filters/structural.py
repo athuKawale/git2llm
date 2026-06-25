@@ -14,13 +14,45 @@ def get_total_diff_lines(commit: CommitRecord) -> int:
             total += len(f.diff.splitlines())
     return total
 
+# Gerrit / DCO / GitHub commit trailers to strip before checking message length
+_TRAILER_PREFIXES = (
+    "Change-Id:", "Reviewed-on:", "Reviewed-by:", "Auto-Submit:",
+    "LUCI-TryBot-Result:", "Cq-Include-Trybots:", "Commit-Queue:",
+    "Signed-off-by:", "Co-authored-by:", "Closes:", "Fixes:",
+    "See:", "Related:", "Refs:", "Cc:", "Acked-by:", "Tested-by:",
+    "cherry picked from", "(cherry picked from",
+)
+
+def _strip_trailers(body: str) -> str:
+    """Strip standard commit trailers from a commit message body."""
+    if not body:
+        return body
+    lines = body.splitlines()
+    result_lines = []
+    in_trailer_block = False
+    for line in lines:
+        stripped = line.strip()
+        is_trailer = any(stripped.startswith(p) for p in _TRAILER_PREFIXES)
+        if is_trailer:
+            in_trailer_block = True
+            continue
+        if in_trailer_block and not stripped:
+            # Skip blank lines within a trailer block
+            continue
+        if not is_trailer:
+            in_trailer_block = False
+        result_lines.append(line)
+    return "\n".join(result_lines).strip()
+
 def check_structural_commit(commit: CommitRecord, config: FilterConfig) -> Tuple[bool, Optional[str]]:
     """
     Run Stage 2: Structural Quality Checks for commits.
     Returns (passed, reason_if_failed).
     """
-    # 2.1 Commit message length/word count
-    full_message = f"{commit.message_subject}\n{commit.message_body}".strip()
+    # 2.1 Commit message length/word count — strip trailers before checking
+    # so that repos using Gerrit (golang, chromium, etc.) aren't penalized
+    clean_body = _strip_trailers(commit.message_body)
+    full_message = f"{commit.message_subject}\n{clean_body}".strip()
     words = count_words(full_message)
     if words < config.min_commit_message_words:
         return False, "structural:message_too_short"

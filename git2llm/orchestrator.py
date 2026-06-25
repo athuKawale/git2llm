@@ -52,15 +52,28 @@ def process_repo(
     token: str,
     deduplicator: Deduplicator,
     writer: DatasetWriter,
-    dry_run: bool = False
+    dry_run: bool = False,
+    progress = None
 ):
     """Process a single repository: collect commits/PRs, filter them, format, and write."""
     writer.add_repo_processed(repo_name)
     
+    repo_task_id = None
+    if progress:
+        total_steps = 0
+        if config.task in {"all", "commit_message"}:
+            total_steps += config.collection.max_commits_per_repo
+        if config.task in {"all", "pr_review", "issue_to_patch"}:
+            total_steps += config.collection.max_prs_per_repo
+        repo_task_id = progress.add_task(
+            f"[cyan][{repo_name}] Initializing...",
+            total=total_steps if total_steps > 0 else None
+        )
+
     # --- 1. Commits processing (Task: commit_message) ---
     if config.task in {"all", "commit_message"}:
         logger.info(f"[{repo_name}] Collecting commits...")
-        commit_collector = CommitCollector(repo_name, config, token)
+        commit_collector = CommitCollector(repo_name, config, token, progress, repo_task_id)
         commits = commit_collector.collect()
         writer.record_raw_counts(commits=len(commits))
         
@@ -110,7 +123,7 @@ def process_repo(
     pr_tasks = {"all", "pr_review", "issue_to_patch"}
     if config.task in pr_tasks:
         logger.info(f"[{repo_name}] Collecting PRs...")
-        pr_collector = PRCollector(repo_name, config, token)
+        pr_collector = PRCollector(repo_name, config, token, progress, repo_task_id)
         prs = pr_collector.collect()
         writer.record_raw_counts(prs=len(prs))
         
@@ -182,6 +195,9 @@ def process_repo(
                 if not dry_run:
                     writer.write_passed(formatted_patch, task_type="issue_to_patch")
 
+    if progress and repo_task_id:
+        progress.remove_task(repo_task_id)
+
 def run_pipeline(
     repos: list[str],
     config: AppConfig,
@@ -210,7 +226,7 @@ def run_pipeline(
         
         with ThreadPoolExecutor(max_workers=max_workers) as pool:
             futures = {
-                pool.submit(process_repo, repo, config, token, deduplicator, writer, dry_run): repo
+                pool.submit(process_repo, repo, config, token, deduplicator, writer, dry_run, progress): repo
                 for repo in repos
             }
             

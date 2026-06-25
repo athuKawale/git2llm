@@ -9,9 +9,11 @@ from git2llm.utils.git_utils import clone_repo
 from git2llm.utils.logging import logger
 
 class CommitCollector(BaseCollector):
-    def __init__(self, repo_name: str, config, token: Optional[str] = None):
+    def __init__(self, repo_name: str, config, token: Optional[str] = None, progress=None, task_id=None):
         super().__init__(repo_name, config)
         self.token = token
+        self.progress = progress
+        self.task_id = task_id
 
     def _detect_language(self, filename: str) -> Optional[str]:
         ext = os.path.splitext(filename)[1].lower()
@@ -40,6 +42,8 @@ class CommitCollector(BaseCollector):
     def collect(self) -> List[CommitRecord]:
         max_commits = self.config.collection.max_commits_per_repo
         depth = max(100, max_commits + 50)
+        if self.progress and self.task_id:
+            self.progress.update(self.task_id, description=f"[cyan][{self.repo_name}] Cloning repository...")
         try:
             local_path = clone_repo(self.repo_name, self.token, depth=depth)
         except Exception as e:
@@ -101,22 +105,31 @@ class CommitCollector(BaseCollector):
                 is_merge=commit.merge,
                 parent_shas=commit.parents
             ))
+            if self.progress and self.task_id:
+                count = len(records)
+                self.progress.advance(self.task_id, 1)
+                # Throttle description updates to reduce console write overhead
+                if count % 10 == 0 or count == max_commits:
+                    self.progress.update(
+                        self.task_id,
+                        description=f"[cyan][{self.repo_name}] Collecting commits ({count}/{max_commits})..."
+                    )
 
         try:
             if not branches:
-                # Traverse all branches using include_remotes=True
-                kwargs = {**base_kwargs, "include_remotes": True, "order": "reverse"}
+                # Traverse default branch (HEAD) only — include_remotes=True traverses ALL
+                # remote refs which on large repos (e.g. golang/go) is thousands of extra commits.
+                kwargs = {**base_kwargs, "order": "reverse"}
                 repo_miner = Repository(local_path, **kwargs)
                 try:
                     for commit in repo_miner.traverse_commits():
                         if len(records) >= max_commits:
-                            logger.info(f"Reached commit limit of {max_commits} for {self.repo_name}")
                             break
                         process_commit(commit)
                 except Exception as traversal_err:
                     err_str = str(traversal_err)
                     if "diff-tree" in err_str or "exit code(-2)" in err_str or "exit code -2" in err_str or "Cmd('git') failed" in err_str:
-                        logger.info(f"Reached shallow clone boundary for {self.repo_name} (parent commit not found). Stopping commit collection.")
+                        logger.info(f"Reached shallow clone boundary for {self.repo_name}. Stopping commit collection.")
                     else:
                         raise
             else:
@@ -154,5 +167,11 @@ class CommitCollector(BaseCollector):
             else:
                 logger.error(f"Error traversing commits for {self.repo_name}: {e}")
             
+        if self.progress and self.task_id:
+            remaining = max_commits - len(records)
+            if remaining > 0:
+                self.progress.advance(self.task_id, remaining)
+            self.progress.update(self.task_id, description=f"[cyan][{self.repo_name}] Commits collected.")
+
         logger.info(f"Collected {len(records)} raw commits from {self.repo_name}")
         return records
